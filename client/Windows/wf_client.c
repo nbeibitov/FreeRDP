@@ -457,7 +457,19 @@ static BOOL wf_post_connect(freerdp* instance)
 	if (wfc->fullscreen)
 		dwStyle = WS_POPUP;
 	else if (!freerdp_settings_get_bool(settings, FreeRDP_Decorations))
-		dwStyle = WS_CHILD | WS_BORDER;
+	{
+		/* WS_CHILD is only valid with a parent window, a top level window without
+		 * decorations must use WS_POPUP or CreateWindowEx fails with
+		 * ERROR_TLW_WITH_WSCHILD (1406).
+		 * WS_CAPTION and WS_SYSMENU are kept so the window keeps its system menu
+		 * (and with it the 'Move' entry) and behaves normally for the task bar.
+		 * The caption itself is hidden in WM_NCCALCSIZE by reporting an empty
+		 * non client area. */
+		if (wfc->hWndParent)
+			dwStyle = WS_CHILD | WS_BORDER;
+		else
+			dwStyle = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+	}
 	else
 		dwStyle =
 		    WS_CAPTION | WS_OVERLAPPED | WS_SYSMENU | WS_MINIMIZEBOX | WS_SIZEBOX | WS_MAXIMIZEBOX;

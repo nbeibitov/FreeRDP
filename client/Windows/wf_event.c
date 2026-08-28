@@ -51,6 +51,7 @@ static BOOL wf_scale_mouse_event_ex(wfContext* wfc, UINT16 flags, UINT16 buttonM
 #endif
 
 static BOOL g_flipping_in = FALSE;
+static BOOL g_sizemove = FALSE;
 static BOOL g_flipping_out = FALSE;
 
 static BOOL g_keystates[256] = WINPR_C_ARRAY_INIT;
@@ -83,6 +84,13 @@ LRESULT CALLBACK wf_ll_kbd_proc(int nCode, WPARAM wParam, LPARAM lParam)
 		if (!alt_ctrl_down())
 			g_flipping_in = FALSE;
 
+		return CallNextHookEx(nullptr, nCode, wParam, lParam);
+	}
+
+	if (g_sizemove)
+	{
+		/* A modal move/size loop is driven by the arrow keys and enter/escape,
+		 * do not swallow them or the window can not be moved. */
 		return CallNextHookEx(nullptr, nCode, wParam, lParam);
 	}
 
@@ -406,6 +414,32 @@ LRESULT CALLBACK wf_event_proc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam
 
 				break;
 
+			case WM_NCCALCSIZE:
+				/* An undecorated window keeps WS_CAPTION | WS_SYSMENU, tell windows the
+				 * non client area is empty so no caption is drawn. */
+				if ((wParam == TRUE) &&
+				    !freerdp_settings_get_bool(settings, FreeRDP_Decorations) && !wfc->fullscreen)
+				{
+					NCCALCSIZE_PARAMS* params = (NCCALCSIZE_PARAMS*)lParam;
+					WINDOWPLACEMENT placement = WINPR_C_ARRAY_INIT;
+					placement.length = sizeof(placement);
+
+					if (GetWindowPlacement(hWnd, &placement) && (placement.showCmd == SW_MAXIMIZE))
+					{
+						/* A maximized window must not cover the task bar */
+						HMONITOR hMonitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
+						MONITORINFO info = WINPR_C_ARRAY_INIT;
+						info.cbSize = sizeof(info);
+
+						if (hMonitor && GetMonitorInfo(hMonitor, &info))
+							params->rgrc[0] = info.rcWork;
+					}
+				}
+				else
+					processed = FALSE;
+
+				break;
+
 			case WM_GETMINMAXINFO:
 				if (freerdp_settings_get_bool(settings, FreeRDP_SmartSizing) ||
 				    (freerdp_settings_get_bool(settings, FreeRDP_DynamicResolutionUpdate)))
@@ -482,7 +516,13 @@ LRESULT CALLBACK wf_event_proc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam
 
 				break;
 
+			case WM_ENTERSIZEMOVE:
+				g_sizemove = TRUE;
+				processed = FALSE;
+				break;
+
 			case WM_EXITSIZEMOVE:
+				g_sizemove = FALSE;
 				wf_size_scrollbars(wfc, wfc->client_width, wfc->client_height);
 				wf_send_resize(wfc);
 				break;

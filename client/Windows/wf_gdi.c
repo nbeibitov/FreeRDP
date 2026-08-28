@@ -345,7 +345,10 @@ void wf_resize_window(wfContext* wfc)
 	}
 	else if (!freerdp_settings_get_bool(wfc->common.context.settings, FreeRDP_Decorations))
 	{
-		SetWindowLongPtr(wfc->hwnd, GWL_STYLE, WS_CHILD);
+		SetWindowLongPtr(wfc->hwnd, GWL_STYLE,
+		                 wfc->hWndParent
+		                     ? WS_CHILD
+		                     : (WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX));
 
 		if (freerdp_settings_get_bool(settings, FreeRDP_EmbeddedWindow))
 		{
