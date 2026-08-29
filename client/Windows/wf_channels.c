@@ -23,7 +23,7 @@
 #include "wf_channels.h"
 
 #include "wf_rail.h"
-#include "wf_cliprdr.h"
+#include <freerdp/client/client_cliprdr_win32.h>
 
 #include <freerdp/gdi/gfx.h>
 #include <freerdp/gdi/video.h>
@@ -48,7 +48,8 @@ void wf_OnChannelConnectedEventHandler(void* context, const ChannelConnectedEven
 	}
 	else if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
 	{
-		wf_cliprdr_init(wfc, (CliprdrClientContext*)e->pInterface);
+		wfc->clipboard = cliprdr_win32_context_new(&wfc->common.context,
+		                                          (CliprdrClientContext*)e->pInterface);
 	}
 	else if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0)
 	{
@@ -75,7 +76,8 @@ void wf_OnChannelDisconnectedEventHandler(void* context, const ChannelDisconnect
 	}
 	else if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
 	{
-		wf_cliprdr_uninit(wfc, (CliprdrClientContext*)e->pInterface);
+		cliprdr_win32_context_free(wfc->clipboard, (CliprdrClientContext*)e->pInterface);
+		wfc->clipboard = nullptr;
 	}
 	else if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0)
 	{

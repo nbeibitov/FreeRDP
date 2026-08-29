@@ -19,6 +19,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <string>
+
+#include <winpr/file.h>
+#include <winpr/path.h>
 
 #include "sdl_context.hpp"
 #include "sdl_config.hpp"
@@ -37,6 +42,66 @@
 #endif
 
 static constexpr auto sdl_allow_screensaver = "sdl-allow-screensaver";
+static constexpr auto sdl_window_remember = "window-remember";
+static constexpr auto sdl_window_position_file = "sdl-freerdp-window-position";
+
+namespace
+{
+	std::string windowPositionFile(const rdpSettings* settings)
+	{
+		const char* config = freerdp_settings_get_string(settings, FreeRDP_ConfigPath);
+
+		if (!config)
+			return {};
+
+		return std::string(config) + "/" + sdl_window_position_file;
+	}
+
+	/** Restore the position stored by the last run, an explicit /window-position wins. */
+	void windowPositionLoad(rdpSettings* settings)
+	{
+		const auto file = windowPositionFile(settings);
+
+		if (file.empty())
+			return;
+
+		std::ifstream in(file);
+		unsigned x = 0;
+		unsigned y = 0;
+
+		if (in >> x >> y)
+		{
+			if ((x <= UINT16_MAX) && (y <= UINT16_MAX))
+			{
+				std::ignore = freerdp_settings_set_uint32(settings, FreeRDP_DesktopPosX, x);
+				std::ignore = freerdp_settings_set_uint32(settings, FreeRDP_DesktopPosY, y);
+			}
+		}
+	}
+
+	void windowPositionSave(const rdpSettings* settings, int x, int y)
+	{
+		/* A minimized window reports bogus coordinates, do not store those */
+		if ((x < 0) || (y < 0) || (x > UINT16_MAX) || (y > UINT16_MAX))
+			return;
+
+		const char* config = freerdp_settings_get_string(settings, FreeRDP_ConfigPath);
+
+		if (config && !winpr_PathFileExists(config))
+		{
+			if (!winpr_PathMakePath(config, nullptr))
+				return;
+		}
+
+		const auto file = windowPositionFile(settings);
+
+		if (file.empty())
+			return;
+
+		std::ofstream out(file, std::ios::trunc);
+		out << x << " " << y << std::endl;
+	}
+} // namespace
 
 SdlContext::SdlContext(rdpContext* context)
     : _context(context), _log(WLog_Get(CLIENT_TAG("SDL"))), _cursor(nullptr, sdl_Pointer_FreeCopy),
@@ -70,6 +135,9 @@ SdlContext::SdlContext(rdpContext* context)
 
 	_args.push_back({ sdl_allow_screensaver, COMMAND_LINE_VALUE_BOOL, nullptr, BoolValueFalse,
 	                  nullptr, -1, nullptr, "Allow local screensaver to activate" });
+	_args.push_back({ sdl_window_remember, COMMAND_LINE_VALUE_BOOL, nullptr, BoolValueFalse, nullptr,
+	                  -1, nullptr,
+	                  "Restore the window position of the previous run and store it again on exit" });
 
 	/* Push a null element used as abort when iterating the array */
 	_args.push_back({ nullptr, 0, nullptr, nullptr, nullptr, -1, nullptr, nullptr });
@@ -121,6 +189,13 @@ int SdlContext::join()
 void SdlContext::cleanup()
 {
 	std::unique_lock lock(_critical);
+
+	if (_windowRemember && !_windows.empty())
+	{
+		const auto rect = _windows.begin()->second.rect();
+		windowPositionSave(context()->settings, rect.x, rect.y);
+	}
+
 	_windows.clear();
 	_dialog.destroy();
 	_primary.reset();
@@ -388,6 +463,11 @@ bool SdlContext::createWindows()
 		originY = std::min<Sint32>(monitor->y, originY);
 	}
 
+	/* An explicit /window-position takes precedence over the stored one */
+	if (_windowRemember &&
+	    (freerdp_settings_get_uint32(settings, FreeRDP_DesktopPosX) == UINT32_MAX))
+		windowPositionLoad(settings);
+
 	for (UINT32 x = 0; x < windowCount; x++)
 	{
 		auto id = monitorId(x);
@@ -430,7 +510,22 @@ bool SdlContext::createWindows()
 			flags |= SDL_WINDOW_BORDERLESS;
 
 		auto did = WINPR_ASSERTING_INT_CAST(SDL_DisplayID, id);
-		auto window = SdlWindow::create(did, title, flags, w, h);
+
+		SDL_Point position = {};
+		const SDL_Point* pos = nullptr;
+
+		if ((freerdp_settings_get_uint32(settings, FreeRDP_DesktopPosX) != UINT32_MAX) &&
+		    (freerdp_settings_get_uint32(settings, FreeRDP_DesktopPosY) != UINT32_MAX) &&
+		    !freerdp_settings_get_bool(settings, FreeRDP_UseMultimon))
+		{
+			position.x =
+			    static_cast<int>(freerdp_settings_get_uint32(settings, FreeRDP_DesktopPosX));
+			position.y =
+			    static_cast<int>(freerdp_settings_get_uint32(settings, FreeRDP_DesktopPosY));
+			pos = &position;
+		}
+
+		auto window = SdlWindow::create(did, title, flags, w, h, pos);
 
 		if (freerdp_settings_get_bool(settings, FreeRDP_UseMultimon))
 		{
@@ -1032,6 +1127,18 @@ sdlInput& SdlContext::getInputChannelContext()
 	return _input;
 }
 
+#if defined(_WIN32)
+CliprdrWin32Context* SdlContext::getWin32Clipboard() const
+{
+	return _win32clip;
+}
+
+void SdlContext::setWin32Clipboard(CliprdrWin32Context* clip)
+{
+	_win32clip = clip;
+}
+#endif
+
 sdlClip& SdlContext::getClipboardChannelContext()
 {
 	return _clip;
@@ -1436,7 +1543,11 @@ int SdlContext::argumentHandler(const COMMAND_LINE_ARGUMENT_A* arg, void* custom
 
 	if (arg->Name)
 	{
-		if (strcmp(arg->Name, sdl_allow_screensaver) == 0)
+		if (strcmp(arg->Name, sdl_window_remember) == 0)
+		{
+			sdl->_windowRemember = (arg->Value != nullptr);
+		}
+		else if (strcmp(arg->Name, sdl_allow_screensaver) == 0)
 		{
 			if (arg->Value != nullptr)
 			{

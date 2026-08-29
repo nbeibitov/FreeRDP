@@ -30,8 +30,6 @@ set(${MODULE_PREFIX}_SRCS
     wf_channels.h
     wf_graphics.c
     wf_graphics.h
-    wf_cliprdr.c
-    wf_cliprdr.h
     wf_rail.c
     wf_rail.h
     wf_client.c

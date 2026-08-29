@@ -26,6 +26,10 @@
 #include <freerdp/client/disp.h>
 #include <freerdp/channels/rdpewa.h>
 
+#if defined(_WIN32)
+#include <freerdp/client/client_cliprdr_win32.h>
+#endif
+
 #include "sdl_channels.hpp"
 #include "sdl_context.hpp"
 #include "sdl_disp.hpp"
@@ -45,8 +49,19 @@ void sdl_OnChannelConnectedEventHandler(void* context, const ChannelConnectedEve
 		auto clip = reinterpret_cast<CliprdrClientContext*>(e->pInterface);
 		WINPR_ASSERT(clip);
 
+#if defined(_WIN32)
+		/* The generic implementation can not copy files on windows: it expects a
+		 * FUSE mount for the remote to local direction and the X11 style mime
+		 * types for the local to remote one. The native win32/OLE implementation
+		 * supports both directions. */
+		sdl->setWin32Clipboard(cliprdr_win32_context_new(sdl->context(), clip));
+
+		if (!sdl->getWin32Clipboard())
+			WLog_Print(sdl->getWLog(), WLOG_WARN, "Failed to initialize clipboard channel");
+#else
 		if (!sdl->getClipboardChannelContext().init(clip))
 			WLog_Print(sdl->getWLog(), WLOG_WARN, "Failed to initialize clipboard channel");
+#endif
 	}
 	else if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0)
 	{
@@ -76,8 +91,13 @@ void sdl_OnChannelDisconnectedEventHandler(void* context, const ChannelDisconnec
 		auto clip = reinterpret_cast<CliprdrClientContext*>(e->pInterface);
 		WINPR_ASSERT(clip);
 
+#if defined(_WIN32)
+		cliprdr_win32_context_free(sdl->getWin32Clipboard(), clip);
+		sdl->setWin32Clipboard(nullptr);
+#else
 		if (!sdl->getClipboardChannelContext().uninit(clip))
 			WLog_Print(sdl->getWLog(), WLOG_WARN, "Failed to uninitialize clipboard channel");
+#endif
 		clip->custom = nullptr;
 	}
 	else if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0)

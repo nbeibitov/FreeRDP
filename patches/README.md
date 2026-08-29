@@ -71,3 +71,36 @@
 FreeRDP (`FreeRDP_ConfigPath`, рядом с `known_hosts`), две координаты
 через пробел. Отрицательные значения не сохраняются: свёрнутое окно
 отдаёт -32000. Верхняя граница 65535 — та же, что у `/window-position`.
+
+## 0003-win32-clipboard-shared-and-sdl-window-position.patch
+
+Накладывать после 0002. Две связанные вещи.
+
+**Копирование файлов через буфер обмена в SDL-клиенте.** Реализация из
+`client/Windows/wf_cliprdr.c` перенесена в `client/common/client_cliprdr_win32.c`
+и стала частью `freerdp-client`, публичный заголовок —
+`include/freerdp/client/client_cliprdr_win32.h`. Перенос возможен потому, что
+файл ни от чего в windows-клиенте не зависел: он поднимает собственное
+скрытое окно и собственный поток, а наружу общается только через
+`CliprdrClientContext`; единственное поле `wfc` присваивалось и никогда не
+читалось. Логика внутри файла не изменена, только сигнатуры двух публичных
+функций:
+
+    wf_cliprdr_init(wfContext*, CliprdrClientContext*)
+      -> cliprdr_win32_context_new(rdpContext*, CliprdrClientContext*)
+    wf_cliprdr_uninit(wfContext*, CliprdrClientContext*)
+      -> cliprdr_win32_context_free(CliprdrWin32Context*, CliprdrClientContext*)
+
+SDL-клиент на Windows использует этот контекст вместо `sdlClip`
+(`sdl_channels.cpp`). Конфликта за владение буфером нет: `sdlClip` там не
+инициализируется, `SDL_SetClipboardData` не вызывается. На linux и macOS
+всё как было. Тег журнала сменился на `com.freerdp.client.win32.cliprdr`.
+
+**Позиция окна в SDL-клиенте.** `SdlWindow::create()` принимает
+необязательную позицию, она подставляется при создании окна. Ключ
+`+window-remember` объявлен локально в `_args` рядом с
+`sdl-allow-screensaver`, имя совпадает с одноимённым ключом wfreerdp из
+патча 0002. Восстановление — в `createWindows()`, сохранение — в
+`SdlContext::cleanup()`. Файл `sdl-freerdp-window-position` в
+`FreeRDP_ConfigPath`, отдельный от файла wfreerdp. При `/multimon`
+позиция не применяется.

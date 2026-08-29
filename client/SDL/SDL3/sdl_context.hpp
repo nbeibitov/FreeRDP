@@ -36,6 +36,10 @@
 #include "sdl_window.hpp"
 #include "sdl_disp.hpp"
 #include "sdl_clip.hpp"
+
+#if defined(_WIN32)
+#include <freerdp/client/client_cliprdr_win32.h>
+#endif
 #include "sdl_input.hpp"
 
 #include "dialogs/sdl_connection_dialog_wrapper.hpp"
@@ -129,6 +133,12 @@ class SdlContext
 	[[nodiscard]] sdlDispContext& getDisplayChannelContext();
 	[[nodiscard]] sdlInput& getInputChannelContext();
 	[[nodiscard]] sdlClip& getClipboardChannelContext();
+#if defined(_WIN32)
+	/* On windows the native OLE implementation is used instead of sdlClip,
+	 * it is the only one that can copy files in both directions. */
+	[[nodiscard]] CliprdrWin32Context* getWin32Clipboard() const;
+	void setWin32Clipboard(CliprdrWin32Context* clip);
+#endif
 
 	[[nodiscard]] SdlConnectionDialogWrapper& getDialog();
 
@@ -232,6 +242,10 @@ class SdlContext
 	sdlDispContext _disp;
 	sdlInput _input;
 	sdlClip _clip;
+	bool _windowRemember = false;
+#if defined(_WIN32)
+	CliprdrWin32Context* _win32clip = nullptr;
+#endif
 
 	SdlConnectionDialogWrapper _dialog;
 

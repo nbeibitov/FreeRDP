@@ -46,7 +46,7 @@
 #include "wf_channels.h"
 #include "wf_floatbar.h"
 #include "wf_event.h"
-#include "wf_cliprdr.h"
+#include <freerdp/client/client_cliprdr_win32.h>
 
 #ifdef __cplusplus
 extern "C"
@@ -129,7 +129,7 @@ extern "C"
 		int yCurrentScroll;
 		int yMaxScroll;
 
-		void* clipboard;
+		CliprdrWin32Context* clipboard;
 		CliprdrClientContext* cliprdr;
 
 		wfFloatBar* floatbar;

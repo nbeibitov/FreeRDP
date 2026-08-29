@@ -554,13 +554,19 @@ void SdlWindow::updateSurface()
 }
 
 SdlWindow SdlWindow::create(SDL_DisplayID id, const std::string& title, Uint32 flags, Uint32 width,
-                            Uint32 height)
+                            Uint32 height, const SDL_Point* position)
 {
 	flags |= SDL_WINDOW_HIGH_PIXEL_DENSITY;
 
 	SDL_Rect rect = { static_cast<int>(SDL_WINDOWPOS_CENTERED_DISPLAY(id)),
 		              static_cast<int>(SDL_WINDOWPOS_CENTERED_DISPLAY(id)), static_cast<int>(width),
 		              static_cast<int>(height) };
+
+	if (position)
+	{
+		rect.x = position->x;
+		rect.y = position->y;
+	}
 
 	if ((flags & SDL_WINDOW_FULLSCREEN) != 0)
 	{

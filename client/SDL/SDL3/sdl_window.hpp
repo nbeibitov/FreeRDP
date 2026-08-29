@@ -29,8 +29,10 @@
 class SdlWindow
 {
   public:
+	/** @param position optional screen position, the window is centered if \b nullptr */
 	[[nodiscard]] static SdlWindow create(SDL_DisplayID id, const std::string& title, Uint32 flags,
-	                                      Uint32 width = 0, Uint32 height = 0);
+	                                      Uint32 width = 0, Uint32 height = 0,
+	                                      const SDL_Point* position = nullptr);
 	[[nodiscard]] static rdpMonitor query(SDL_DisplayID id, bool forceAsPrimary = false);
 
 	SdlWindow(SdlWindow&& other) noexcept;

@@ -32,6 +32,10 @@ set(SRCS
     smartcard_cli.c
 )
 
+if(WIN32)
+  list(APPEND SRCS client_cliprdr_win32.c)
+endif()
+
 foreach(FREERDP_CHANNELS_CLIENT_SRC ${FREERDP_CHANNELS_CLIENT_SRCS})
   get_filename_component(NINC ${FREERDP_CHANNELS_CLIENT_SRC} PATH)
   include_directories(${NINC})
