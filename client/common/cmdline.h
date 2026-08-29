@@ -186,7 +186,8 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	  nullptr, -1, nullptr,
 	  "Read command line from a file, stdin or file descriptor. This argument can not be combined "
 	  "with any other. "
-	  "Provide one argument per line." },
+	  "Provide one argument per line. When reading from a file lines starting with '#' are "
+	  "comments and empty lines are skipped." },
 	{ "from-stdin", COMMAND_LINE_VALUE_OPTIONAL, "force", nullptr, nullptr, -1, nullptr,
 	  "Read credentials from stdin. With <force> the prompt is done before connection, otherwise "
 	  "on server request." },

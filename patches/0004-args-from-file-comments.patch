@@ -1,0 +1,85 @@
+diff --git a/client/common/cmdline.c b/client/common/cmdline.c
+index 11fd09463..aa2b55dd5 100644
+--- a/client/common/cmdline.c
++++ b/client/common/cmdline.c
+@@ -5902,7 +5902,11 @@ static BOOL argv_append_dup(int* pargc, char** pargv[], const char* what)
+ 	return rc;
+ }
+ 
+-static BOOL args_from_fp(FILE* fp, int* aargc, char** aargv[], const char* file, const char* cmd)
++/** @param comments allow '#' comment lines and skip empty lines instead of stopping.
++ *  Only enabled when reading from a file: on stdin an empty line terminates the input.
++ */
++static BOOL args_from_fp(FILE* fp, int* aargc, char** aargv[], const char* file, const char* cmd,
++                         BOOL comments)
+ {
+ 	BOOL success = FALSE;
+ 
+@@ -5941,12 +5945,20 @@ static BOOL args_from_fp(FILE* fp, int* aargc, char** aargv[], const char* file,
+ 			else
+ 				break;
+ 		}
+-		/* abort on empty lines */
++		/* abort on empty lines, a comment file may use them to separate blocks */
+ 		if (rc == 0)
+ 		{
+ 			free(line);
++			if (comments)
++				continue;
+ 			break;
+ 		}
++		/* skip comment lines */
++		if (comments && (line[0] == '#'))
++		{
++			free(line);
++			continue;
++		}
+ 		if (!argv_append(aargc, aargv, line))
+ 		{
+ 			free(line);
+@@ -6063,7 +6075,7 @@ int freerdp_client_settings_parse_command_line_arguments_with_flags(
+ 			if (!value_to_uint(val, &result, 0, INT_MAX))
+ 				return -1;
+ 			fp = fdopen((int)result, "r");
+-			success = args_from_fp(fp, &aargc, &aargv, file, oargv[0]);
++			success = args_from_fp(fp, &aargc, &aargv, file, oargv[0], FALSE);
+ 		}
+ 		else if (strncmp(file, "env:", 4) == 0)
+ 		{
+@@ -6074,7 +6086,7 @@ int freerdp_client_settings_parse_command_line_arguments_with_flags(
+ 		{
+ 			file = strchr(file, ':') + 1;
+ 			fp = winpr_fopen(file, "r");
+-			success = args_from_fp(fp, &aargc, &aargv, file, oargv[0]);
++			success = args_from_fp(fp, &aargc, &aargv, file, oargv[0], TRUE);
+ 		}
+ #if !defined(WITHOUT_FREERDP_3x_DEPRECATED)
+ 		else if (strcmp(file, "stdin") != 0)
+@@ -6082,11 +6094,11 @@ int freerdp_client_settings_parse_command_line_arguments_with_flags(
+ 			fp = winpr_fopen(file, "r");
+ 			WLog_WARN(TAG, "/args-from:%s is deprecated, use /args-from:file:%s instead", file,
+ 			          file);
+-			success = args_from_fp(fp, &aargc, &aargv, file, oargv[0]);
++			success = args_from_fp(fp, &aargc, &aargv, file, oargv[0], TRUE);
+ 		}
+ #endif
+ 		else if (strcmp(file, "stdin") == 0)
+-			success = args_from_fp(fp, &aargc, &aargv, file, oargv[0]);
++			success = args_from_fp(fp, &aargc, &aargv, file, oargv[0], FALSE);
+ 
+ 		if (!success)
+ 			return -1;
+diff --git a/client/common/cmdline.h b/client/common/cmdline.h
+index ed4356396..7692ddb2f 100644
+--- a/client/common/cmdline.h
++++ b/client/common/cmdline.h
+@@ -186,7 +186,8 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
+ 	  nullptr, -1, nullptr,
+ 	  "Read command line from a file, stdin or file descriptor. This argument can not be combined "
+ 	  "with any other. "
+-	  "Provide one argument per line." },
++	  "Provide one argument per line. When reading from a file lines starting with '#' are "
++	  "comments and empty lines are skipped." },
+ 	{ "from-stdin", COMMAND_LINE_VALUE_OPTIONAL, "force", nullptr, nullptr, -1, nullptr,
+ 	  "Read credentials from stdin. With <force> the prompt is done before connection, otherwise "
+ 	  "on server request." },
