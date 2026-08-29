@@ -24,6 +24,9 @@
 #include <winpr/windows.h>
 
 #include <winpr/crt.h>
+#include <winpr/cmdline.h>
+#include <winpr/file.h>
+#include <winpr/path.h>
 
 #include <freerdp/freerdp.h>
 #include <freerdp/constants.h>
@@ -40,8 +43,99 @@
 
 #include <shellapi.h>
 
+static const char wf_window_remember[] = "window-remember";
+
+static char* wf_window_position_file(const rdpSettings* settings)
+{
+	const char* config = freerdp_settings_get_string(settings, FreeRDP_ConfigPath);
+
+	if (!config)
+		return nullptr;
+
+	return GetCombinedPath(config, "wfreerdp-window-position");
+}
+
+/** Restore the window position stored by the last run, /window-position wins if given. */
+static void wf_window_position_load(rdpSettings* settings)
+{
+	char* file = wf_window_position_file(settings);
+
+	if (!file)
+		return;
+
+	FILE* fp = winpr_fopen(file, "r");
+
+	if (fp)
+	{
+		unsigned x = 0;
+		unsigned y = 0;
+
+		if (fscanf(fp, "%u %u", &x, &y) == 2)
+		{
+			if ((x <= UINT16_MAX) && (y <= UINT16_MAX))
+			{
+				(void)freerdp_settings_set_uint32(settings, FreeRDP_DesktopPosX, x);
+				(void)freerdp_settings_set_uint32(settings, FreeRDP_DesktopPosY, y);
+			}
+		}
+
+		fclose(fp);
+	}
+
+	free(file);
+}
+
+static void wf_window_position_save(const rdpSettings* settings, int x, int y)
+{
+	/* A minimized window reports -32000, do not store that */
+	if ((x < 0) || (y < 0) || (x > UINT16_MAX) || (y > UINT16_MAX))
+		return;
+
+	const char* config = freerdp_settings_get_string(settings, FreeRDP_ConfigPath);
+
+	if (config && !winpr_PathFileExists(config))
+	{
+		if (!winpr_PathMakePath(config, nullptr))
+			return;
+	}
+
+	char* file = wf_window_position_file(settings);
+
+	if (!file)
+		return;
+
+	FILE* fp = winpr_fopen(file, "w");
+
+	if (fp)
+	{
+		(void)fprintf(fp, "%d %d\n", x, y);
+		fclose(fp);
+	}
+
+	free(file);
+}
+
+static int wf_handle_option(const COMMAND_LINE_ARGUMENT_A* arg, void* custom)
+{
+	BOOL* remember = (BOOL*)custom;
+
+	if (!arg || !arg->Name || !remember)
+		return -1;
+
+	if (strcmp(arg->Name, wf_window_remember) == 0)
+		*remember = (arg->Value == BoolValueTrue);
+
+	return 0;
+}
+
 INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
+	BOOL remember = FALSE;
+	COMMAND_LINE_ARGUMENT_A wf_args[] = {
+		{ wf_window_remember, COMMAND_LINE_VALUE_BOOL, nullptr, BoolValueFalse, nullptr, -1, nullptr,
+		  "Restore the window position of the previous run and store it again on exit" },
+		{ nullptr, 0, nullptr, nullptr, nullptr, -1, nullptr, nullptr }
+	};
 	int status;
 	HANDLE thread;
 	wfContext* wfc;
@@ -103,14 +197,20 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	if (!settings || !wfc)
 		goto out;
 
-	status = freerdp_client_settings_parse_command_line(settings, argc, argv, FALSE);
+	status = freerdp_client_settings_parse_command_line_ex(
+	    settings, argc, argv, FALSE, wf_args, ARRAYSIZE(wf_args) - 1, wf_handle_option, &remember);
 	if (status)
 	{
-		ret = freerdp_client_settings_command_line_status_print(settings, status, argc, argv);
+		ret = freerdp_client_settings_command_line_status_print_ex(settings, status, argc, argv,
+		                                                           wf_args);
 		goto out;
 	}
 
 	AddDefaultSettings(settings);
+
+	/* An explicit /window-position takes precedence over the stored one */
+	if (remember && (freerdp_settings_get_uint32(settings, FreeRDP_DesktopPosX) == UINT32_MAX))
+		wf_window_position_load(settings);
 
 	if (freerdp_client_start(context) != 0)
 		goto out;
@@ -125,6 +225,9 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 			ret = (int)dwExitCode;
 		}
 	}
+
+	if (remember)
+		wf_window_position_save(settings, wfc->client_x, wfc->client_y);
 
 	if (freerdp_client_stop(context) != 0)
 		goto out;

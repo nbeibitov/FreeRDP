@@ -49,3 +49,25 @@
 Собирать: `cmake --build build --target wfreerdp`, затем скопировать
 `build/client/Windows/wfreerdp-client3.dll` и
 `build/client/Windows/cli/wfreerdp.exe` туда, откуда запускается клиент.
+
+## 0002-wfreerdp-remember-window-position.patch
+
+Накладывать после 0001. Даёт `wfreerdp` возможность запоминать положение
+окна между запусками, чтобы не заворачивать его в PowerShell-обёртку.
+
+1. `wf_gdi.c` — в ветке окна без декораций учитываются `DesktopPosX/PosY`,
+   то есть штатный ключ `/window-position:<x>x<y>` наконец работает и с
+   `-decorations`. Раньше координаты читались только в ветке окна с
+   декорациями, а здесь стояло жёсткое `SetWindowPos(..., 0, 0, ...)`.
+
+2. `wfreerdp.c` — новый ключ `+window-remember`: при старте позиция
+   читается из файла и кладётся в `DesktopPosX/PosY`, при выходе
+   сохраняется из `wfc->client_x/client_y`. Явный `/window-position`
+   имеет приоритет над сохранённым. Опция объявлена локально в клиенте
+   через `freerdp_client_settings_parse_command_line_ex`, общий парсер
+   `client/common/cmdline.h` не затронут.
+
+Файл с позицией — `wfreerdp-window-position` в каталоге конфигурации
+FreeRDP (`FreeRDP_ConfigPath`, рядом с `known_hosts`), две координаты
+через пробел. Отрицательные значения не сохраняются: свёрнутое окно
+отдаёт -32000. Верхняя граница 65535 — та же, что у `/window-position`.

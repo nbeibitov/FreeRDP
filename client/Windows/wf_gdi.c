@@ -366,8 +366,17 @@ void wf_resize_window(wfContext* wfc)
 		}
 		else
 		{
+			int xpos = 0;
+			int ypos = 0;
+			if ((freerdp_settings_get_uint32(settings, FreeRDP_DesktopPosX) != UINT32_MAX) &&
+			    (freerdp_settings_get_uint32(settings, FreeRDP_DesktopPosY) != UINT32_MAX))
+			{
+				xpos = (int)freerdp_settings_get_uint32(settings, FreeRDP_DesktopPosX);
+				ypos = (int)freerdp_settings_get_uint32(settings, FreeRDP_DesktopPosY);
+			}
+
 			/* Now resize to get full canvas size and room for caption and borders */
-			SetWindowPos(wfc->hwnd, HWND_TOP, 0, 0,
+			SetWindowPos(wfc->hwnd, HWND_TOP, xpos, ypos,
 			             freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth),
 			             freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight),
 			             SWP_FRAMECHANGED);
